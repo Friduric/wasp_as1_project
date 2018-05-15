@@ -1,0 +1,9 @@
+Plan of group B
+
+0. Use general formulations given in material and write some initial code
+1. Find parameters for thrust
+2. Find parameters for horizontal control xy in view of the simpler pd-controller
+3. Find parameter for altitude control
+4. Add possibility to add a path or rules for flying between points
+5. Add possibility to set yaw direction to fly nose-on towards the reference point
+6. Further alternatives: repeated path, more aggressive flying, discrete controller, use vicon positioning system
