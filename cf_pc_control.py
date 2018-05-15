@@ -60,8 +60,10 @@ class ControllerThread(threading.Thread):
 
         # Pose estimate from the Kalman filter
         self.pos = np.r_[0.0, 0.0, 0.0]
+        self.pos_error_last = np.r_[0.0, 0.0, 0.0]
         self.vel = np.r_[0.0, 0.0, 0.0]
         self.attq = np.r_[0.0, 0.0, 0.0, 1.0]
+        self.euler_last = np.r_[0.0, 0.0, 0.0]
         self.R = np.eye(3)
 
         # Attitide (roll, pitch, yaw) from stabilizer
@@ -78,13 +80,13 @@ class ControllerThread(threading.Thread):
         log_stab_att.add_variable('stabilizer.pitch', 'float')
         log_stab_att.add_variable('stabilizer.yaw', 'float')
         self.cf.log.add_config(log_stab_att)
-    
+
         log_pos = LogConfig(name='Kalman Position', period_in_ms=self.period_in_ms)
         log_pos.add_variable('kalman.stateX', 'float')
         log_pos.add_variable('kalman.stateY', 'float')
         log_pos.add_variable('kalman.stateZ', 'float')
         self.cf.log.add_config(log_pos)
-        
+
         log_vel = LogConfig(name='Kalman Velocity', period_in_ms=self.period_in_ms)
         log_vel.add_variable('kalman.statePX', 'float')
         log_vel.add_variable('kalman.statePY', 'float')
@@ -98,7 +100,7 @@ class ControllerThread(threading.Thread):
         log_att.add_variable('kalman.q2', 'float')
         log_att.add_variable('kalman.q3', 'float')
         self.cf.log.add_config(log_att)
-        
+
         if log_stab_att.valid and log_pos.valid and log_vel.valid and log_att.valid:
             log_stab_att.data_received_cb.add_callback(self._log_data_stab_att)
             log_stab_att.error_cb.add_callback(self._log_error)
@@ -132,7 +134,7 @@ class ControllerThread(threading.Thread):
         self.stab_att = np.r_[data['stabilizer.roll'],
                               data['stabilizer.pitch'],
                               data['stabilizer.yaw']]
-    
+
     def _log_data_pos(self, timestamp, data, logconf):
         self.pos = np.r_[data['kalman.stateX'],
                          data['kalman.stateY'],
@@ -208,20 +210,54 @@ class ControllerThread(threading.Thread):
         # THAT OUTPUTS THE REFERENCE VALUES FOR
         # ROLL PITCH, YAWRATE AND THRUST
         # WHICH ARE TAKEN CARE OF BY THE ONBOARD CONTROL LOOPS
+        delta_time_inv = 1 / (1e-3*self.period_in_ms)
         roll, pitch, yaw  = trans.euler_from_quaternion(self.attq)
+        yaw_rate = delta_time_inv * (yaw - self.euler_last[2])
+        e_yaw_rate = self.yaw_ref - yaw_rate
+        self.euler_last = np.r_[roll,pitch,yaw]
 
         # Compute control errors in position
         ex,  ey,  ez  = self.pos_ref - self.pos
+        ex_dot = delta_time_inv * (ex - self.pos_error_last[0])
+        ey_dot = delta_time_inv * (ey - self.pos_error_last[1])
+        ez_dot = delta_time_inv * (ez - self.pos_error_last[2])
+        self.pos_error_last = np.r_[ex,ey,ez]
+
+        # PID Controller
+        C      = 0
+        Kp_z   = 0
+        Kd_z   = 0
+        Kp_p   = 0
+        Kd_p   = 0
+        Kd_psi = 0
+
+        # Version 1: Assuming yaw = 0
+        roll_ref     = -(Kp_p * ey + Kd_p * ey_dot)
+        pitch_ref    = Kp_p * ex + Kd_p * ex_dot
+        yaw_rate_ref = Kd_psi * e_yaw_rate
+        thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
+
+        # Version 2: Handle yaw != 0
+        #roll_ref     = sin(yaw) * (Kp_p * ex + Kd_p * ex_dot) - cos(yaw) * (Kp_p * ey + Kd_p * ey_dot)
+        #pitch_ref    = cos(yaw) * (Kp_p * ex + Kd_p * ex_dot) + sin(yaw) * (Kp_p * ey + Kd_p * ey_dot)
+        #yaw_rate_ref = Kd_psi * e_yaw_rate
+        #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81) / (cos(roll) * cos(pitch))
+
+        # Limit signals
+        self.roll_r    = np.clip(roll_ref, *self.roll_limit)
+        self.pitch_r   = np.clip(pitch_ref, *self.pitch_limit)
+        self.yawrate_r = np.clip(yaw_rate_ref, *self.yaw_limit)
+        self.thrust_r  = np.clip(thrust_ref, *self.thrust_limit)
 
         # The code below will simply send the thrust that you can set using
         # the keyboard and put all other control signals to zero. It also
         # shows how, using numpy, you can threshold the signals to be between
         # the lower and upper limits defined by the arrays *_limit
-        self.roll_r    = np.clip(0.0, *self.roll_limit)
-        self.pitch_r   = np.clip(0.0, *self.pitch_limit)
-        self.yawrate_r = np.clip(0.0, *self.yaw_limit)
-        self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
-    
+        #self.roll_r    = np.clip(0.0, *self.roll_limit)
+        #self.pitch_r   = np.clip(0.0, *self.pitch_limit)
+        #self.yawrate_r = np.clip(0.0, *self.yaw_limit)
+        #self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
+
         message = ('ref: ({}, {}, {}, {})\n'.format(self.pos_ref[0], self.pos_ref[1], self.pos_ref[2], self.yaw_ref)+
                    'pos: ({}, {}, {}, {})\n'.format(self.pos[0], self.pos[1], self.pos[2], yaw)+
                    'vel: ({}, {}, {})\n'.format(self.vel[1], self.vel[1], self.vel[2])+
@@ -281,7 +317,7 @@ class ControllerThread(threading.Thread):
 def handle_keyboard_input(control):
     pos_step = 0.1 # [m]
     yaw_step = 5   # [deg]
-    
+
     for ch in read_input():
         if ch == 'h':
             print('Key map:')
