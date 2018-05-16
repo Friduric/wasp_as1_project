@@ -189,6 +189,7 @@ class ControllerThread(threading.Thread):
                 self.calc_control_signals()
                 if self.enabled:
                     sp = (self.roll_r, self.pitch_r, self.yawrate_r, int(self.thrust_r))
+                    print(sp)
                     self.send_setpoint(*sp)
                     # Log data to file for analysis
                     ld = np.r_[time.time() - t0]
@@ -224,18 +225,18 @@ class ControllerThread(threading.Thread):
         self.pos_error_last = np.r_[ex,ey,ez]
 
         # PID Controller
-        C      = 0
-        Kp_z   = 0
-        Kd_z   = 0
+        C      = 123585.0
+        Kp_z   = 0.25
+        Kd_z   = 0.01
         Kp_p   = 0
         Kd_p   = 0
         Kd_psi = 0
 
         # Version 1: Assuming yaw = 0
-        roll_ref     = -(Kp_p * ey + Kd_p * ey_dot)
-        pitch_ref    = Kp_p * ex + Kd_p * ex_dot
-        yaw_rate_ref = Kd_psi * e_yaw_rate
-        thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
+        #roll_ref     = -(Kp_p * ey + Kd_p * ey_dot)
+        #pitch_ref    = Kp_p * ex + Kd_p * ex_dot
+        #yaw_rate_ref = Kd_psi * e_yaw_rate
+        #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
 
         # Version 2: Handle yaw != 0
         #roll_ref     = sin(yaw) * (Kp_p * ex + Kd_p * ex_dot) - cos(yaw) * (Kp_p * ey + Kd_p * ey_dot)
@@ -244,19 +245,19 @@ class ControllerThread(threading.Thread):
         #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81) / (cos(roll) * cos(pitch))
 
         # Limit signals
-        self.roll_r    = np.clip(roll_ref, *self.roll_limit)
-        self.pitch_r   = np.clip(pitch_ref, *self.pitch_limit)
-        self.yawrate_r = np.clip(yaw_rate_ref, *self.yaw_limit)
-        self.thrust_r  = np.clip(thrust_ref, *self.thrust_limit)
+        #self.roll_r    = np.clip(roll_ref, *self.roll_limit)
+        #self.pitch_r   = np.clip(pitch_ref, *self.pitch_limit)
+        #self.yawrate_r = np.clip(yaw_rate_ref, *self.yaw_limit)
+        #self.thrust_r  = np.clip(thrust_ref, *self.thrust_limit)
 
         # The code below will simply send the thrust that you can set using
         # the keyboard and put all other control signals to zero. It also
         # shows how, using numpy, you can threshold the signals to be between
         # the lower and upper limits defined by the arrays *_limit
-        #self.roll_r    = np.clip(0.0, *self.roll_limit)
-        #self.pitch_r   = np.clip(0.0, *self.pitch_limit)
-        #self.yawrate_r = np.clip(0.0, *self.yaw_limit)
-        #self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
+        self.roll_r    = np.clip(0.0, *self.roll_limit)
+        self.pitch_r   = np.clip(0.0, *self.pitch_limit)
+        self.yawrate_r = np.clip(0.0, *self.yaw_limit)
+        self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
 
         message = ('ref: ({}, {}, {}, {})\n'.format(self.pos_ref[0], self.pos_ref[1], self.pos_ref[2], self.yaw_ref)+
                    'pos: ({}, {}, {}, {})\n'.format(self.pos[0], self.pos[1], self.pos[2], yaw)+
