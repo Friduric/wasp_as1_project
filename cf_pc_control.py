@@ -354,7 +354,7 @@ def handle_keyboard_input(control):
             print('j: Increase yaw-reference by ', yaw_step, 'm.')
             print('l: Decrease yaw-reference by ', yaw_step, 'deg.')
             print('p: Panic and set thrust to ', panic_thrust)
-            print('c: Chill and set thrust to commanded value)
+            print('c: Chill and set thrust to commanded value')
         elif ch == '>':
             control.increase_thrust()
             print('Increased thrust to', control.thrust_r)
