@@ -65,7 +65,6 @@ class ControllerThread(threading.Thread):
 
         # Pose estimate from the Kalman filter
         self.pos = np.r_[0.0, 0.0, 0.0]
-        self.pos_error_last = np.r_[0.0, 0.0, 0.0]
         self.vel = np.r_[0.0, 0.0, 0.0]
         self.attq = np.r_[0.0, 0.0, 0.0, 1.0]
         self.yaw_error_last = 0.0
@@ -242,15 +241,11 @@ class ControllerThread(threading.Thread):
         #eyaw_dot = -gyro.z
         self.yaw_error_last = eyaw
 
-        # Compute control errors in position
+        # Compute control errors in position (assuming piecewise constant reference)
         ex,  ey,  ez  = self.pos_ref - self.pos
-        ex_dot = delta_time_inv * (ex - self.pos_error_last[0]) # Use velocity instead?
-        ey_dot = delta_time_inv * (ey - self.pos_error_last[1]) # Use velocity instead?
-        ez_dot = delta_time_inv * (ez - self.pos_error_last[2]) # Use velocity instead?
-        #ex_dot = -self.vel[0]
-        #ey_dot = -self.vel[1]
-        #ez_dot = -self.vel[2]
-        self.pos_error_last = np.r_[ex,ey,ez]
+        ex_dot = -self.vel[0]
+        ey_dot = -self.vel[1]
+        ez_dot = -self.vel[2]
 
         # PID Controller
         C      = 123585.0
