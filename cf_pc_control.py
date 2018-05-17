@@ -36,6 +36,8 @@ class ControllerThread(threading.Thread):
     thrust_step = 5e3   # Thrust step with W/S. [65535 = 100% PWM duty cycle]
     thrust_initial = 0
     thrust_limit = (0, 65535)
+    panic_thrust = 30000
+    panic_thrust_enabled = False
     roll_limit   = (-30.0, 30.0)
     pitch_limit  = (-30.0, 30.0)
     yaw_limit    = (-200.0, 200.0)
@@ -223,6 +225,7 @@ class ControllerThread(threading.Thread):
         while (eyaw < -np.pi)
             eyaw += 2 * np.pi;
         eyaw_dot = delta_time_inv * (eyaw - self.yaw_error_last) # Get gyro signal instead?
+        #eyaw_dot = -gyro.z
         self.yaw_error_last = eyaw
 
         # Compute control errors in position
@@ -230,6 +233,9 @@ class ControllerThread(threading.Thread):
         ex_dot = delta_time_inv * (ex - self.pos_error_last[0]) # Use velocity instead?
         ey_dot = delta_time_inv * (ey - self.pos_error_last[1]) # Use velocity instead?
         ez_dot = delta_time_inv * (ez - self.pos_error_last[2]) # Use velocity instead?
+        #ex_dot = -self.vel[0]
+        #ey_dot = -self.vel[1]
+        #ez_dot = -self.vel[2]
         self.pos_error_last = np.r_[ex,ey,ez]
 
         # PID Controller
@@ -268,10 +274,13 @@ class ControllerThread(threading.Thread):
         self.yawrate_r = np.clip(0.0, *self.yaw_limit)
         self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
 
+        if self.panic_thrust_enabled:
+            self.thrust_r  = np.clip(self.panic_thrust, *self.thrust_limit)
+
         message = ('ref: ({}, {}, {}, {})\n'.format(self.pos_ref[0], self.pos_ref[1], self.pos_ref[2], self.yaw_ref)+
                    'pos: ({}, {}, {}, {})\n'.format(self.pos[0], self.pos[1], self.pos[2], yaw)+
-                   'vel: ({}, {}, {})\n'.format(self.vel[1], self.vel[1], self.vel[2])+
-                   'error: ({}, {}, {})\n'.format(ex, ey, ez)+
+                   'vel: ({}, {}, {})\n'.format(self.vel[0], self.vel[1], self.vel[2])+
+                   'error: ({}, {}, {}, {})\n'.format(ex, ey, ez, eyaw)+
                    'control: ({}, {}, {}, {})\n'.format(self.roll_r, self.pitch_r, self.yawrate_r, self.thrust_r))
         self.print_at_period(2.0, message)
 
@@ -344,6 +353,8 @@ def handle_keyboard_input(control):
             print('k: Decrease z-reference by ', pos_step, 'm.')
             print('j: Increase yaw-reference by ', yaw_step, 'm.')
             print('l: Decrease yaw-reference by ', yaw_step, 'deg.')
+            print('p: Panic and set thrust to ', panic_thrust)
+            print('c: Chill and set thrust to commanded value)
         elif ch == '>':
             control.increase_thrust()
             print('Increased thrust to', control.thrust_r)
@@ -389,6 +400,12 @@ def handle_keyboard_input(control):
             control.disable()
             print('Bye!')
             break
+        elif ch == 'p':
+            panic_thrust_enabled = True
+            print('Panic thrust enabled')
+        elif ch == 'c':
+            panic_thrust_enabled = False
+            print('Panic thrust disabled')
         else:
             print('Unhandled key', ch, 'was pressed')
 
