@@ -11,6 +11,8 @@ import transformations as trans
 from cflib import crazyflie, crtp
 from cflib.crazyflie.log import LogConfig
 
+
+
 # Set a channel - if set to None, the first available crazyflie is used
 #URI = 'radio://0/101/2M'
 URI = None
@@ -40,6 +42,7 @@ class ControllerThread(threading.Thread):
     pitch_limit  = (-30.0, 30.0)
     yaw_limit    = (-200.0, 200.0)
     enabled = False
+    enable_vicon_pos = False
 
     def __init__(self, cf):
         super(ControllerThread, self).__init__()
@@ -71,6 +74,13 @@ class ControllerThread(threading.Thread):
 
         # This makes Python exit when this is the only thread alive.
         self.daemon = True
+
+        if self.enable_vicon_pos:
+            import rospy
+            from qualisys.msg import Subject
+            rospy.init_node('listener', anonymous=True)
+            rospy.Subscriber("/qualisys/crazyflie", Subject, self._vicon_pos_callback)
+            rospy.spin()
 
     def _connected(self, link_uri):
         print('Connected to', link_uri)
@@ -106,9 +116,10 @@ class ControllerThread(threading.Thread):
             log_stab_att.error_cb.add_callback(self._log_error)
             log_stab_att.start()
 
-            log_pos.data_received_cb.add_callback(self._log_data_pos)
-            log_pos.error_cb.add_callback(self._log_error)
-            log_pos.start()
+            if not self.enable_vicon_pos:
+                log_pos.data_received_cb.add_callback(self._log_data_pos)
+                log_pos.error_cb.add_callback(self._log_error)
+                log_pos.start()
 
             log_vel.error_cb.add_callback(self._log_error)
             log_vel.data_received_cb.add_callback(self._log_data_vel)
@@ -139,6 +150,9 @@ class ControllerThread(threading.Thread):
         self.pos = np.r_[data['kalman.stateX'],
                          data['kalman.stateY'],
                          data['kalman.stateZ']]
+
+    def _log_vicon_data_pos(self, data):
+        self.pos = np.r_[data.x, data.y, data.z]
 
     def _log_data_vel(self, timestamp, data, logconf):
         vel_bf = np.r_[data['kalman.statePX'],
