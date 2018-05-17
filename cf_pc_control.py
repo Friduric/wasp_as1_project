@@ -63,7 +63,7 @@ class ControllerThread(threading.Thread):
         self.pos_error_last = np.r_[0.0, 0.0, 0.0]
         self.vel = np.r_[0.0, 0.0, 0.0]
         self.attq = np.r_[0.0, 0.0, 0.0, 1.0]
-        self.euler_last = np.r_[0.0, 0.0, 0.0]
+        self.yaw_error_last = 0.0
         self.R = np.eye(3)
 
         # Attitide (roll, pitch, yaw) from stabilizer
@@ -211,37 +211,46 @@ class ControllerThread(threading.Thread):
         # THAT OUTPUTS THE REFERENCE VALUES FOR
         # ROLL PITCH, YAWRATE AND THRUST
         # WHICH ARE TAKEN CARE OF BY THE ONBOARD CONTROL LOOPS
+
+        # Compute time step
         delta_time_inv = 1 / (1e-3*self.period_in_ms)
+
+        # Get euler angles in radians (?) and compute control errors in yaw
         roll, pitch, yaw  = trans.euler_from_quaternion(self.attq)
-        yaw_rate = delta_time_inv * (yaw - self.euler_last[2])
-        e_yaw_rate = self.yaw_ref - yaw_rate
-        self.euler_last = np.r_[roll,pitch,yaw]
+        eyaw = self.yaw_ref - yaw
+        while (eyaw > np.pi)
+            eyaw -= 2 * np.pi;
+        while (eyaw < -np.pi)
+            eyaw += 2 * np.pi;
+        eyaw_dot = delta_time_inv * (eyaw - self.yaw_error_last) # Get gyro signal instead?
+        self.yaw_error_last = eyaw
 
         # Compute control errors in position
         ex,  ey,  ez  = self.pos_ref - self.pos
-        ex_dot = delta_time_inv * (ex - self.pos_error_last[0])
-        ey_dot = delta_time_inv * (ey - self.pos_error_last[1])
-        ez_dot = delta_time_inv * (ez - self.pos_error_last[2])
+        ex_dot = delta_time_inv * (ex - self.pos_error_last[0]) # Use velocity instead?
+        ey_dot = delta_time_inv * (ey - self.pos_error_last[1]) # Use velocity instead?
+        ez_dot = delta_time_inv * (ez - self.pos_error_last[2]) # Use velocity instead?
         self.pos_error_last = np.r_[ex,ey,ez]
 
         # PID Controller
         C      = 123585.0
-        Kp_z   = 0.25
-        Kd_z   = 0.01
-        Kp_p   = 0
-        Kd_p   = 0
-        Kd_psi = 0
+        Kp_z   = 2 #0.25
+        Kd_z   = 1 #0.01
+        Kp_p   = 2
+        Kd_p   = 1
+        Kp_psi = 2
+        Kd_psi = 1
 
         # Version 1: Assuming yaw = 0
         #roll_ref     = -(Kp_p * ey + Kd_p * ey_dot)
         #pitch_ref    = Kp_p * ex + Kd_p * ex_dot
-        #yaw_rate_ref = Kd_psi * e_yaw_rate
+        #yaw_rate_ref = Kp_psi * eyaw + Kd_psi * eyaw_dot
         #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
 
         # Version 2: Handle yaw != 0
         #roll_ref     = sin(yaw) * (Kp_p * ex + Kd_p * ex_dot) - cos(yaw) * (Kp_p * ey + Kd_p * ey_dot)
         #pitch_ref    = cos(yaw) * (Kp_p * ex + Kd_p * ex_dot) + sin(yaw) * (Kp_p * ey + Kd_p * ey_dot)
-        #yaw_rate_ref = Kd_psi * e_yaw_rate
+        #yaw_rate_ref = Kp_psi * eyaw + Kd_psi * eyaw_dot
         #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81) / (cos(roll) * cos(pitch))
 
         # Limit signals
