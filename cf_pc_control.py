@@ -14,8 +14,8 @@ from cflib.crazyflie.log import LogConfig
 
 
 # Set a channel - if set to None, the first available crazyflie is used
-#URI = 'radio://0/101/2M'
-URI = None
+URI = 'radio://0/84/2M'
+#URI = None
 
 def read_input(file=sys.stdin):
     """Registers keystrokes and yield these every time one of the
@@ -37,7 +37,8 @@ class ControllerThread(threading.Thread):
     period_in_ms = 20  # Control period. [ms]
     thrust_step = 5e3   # Thrust step with W/S. [65535 = 100% PWM duty cycle]
     thrust_initial = 0
-    thrust_limit = (0, 65535)
+    #thrust_limit = (0, 65535)
+    thrust_limit = (0, 35000)
     panic_thrust = 30000
     panic_thrust_enabled = False
     roll_limit   = (-30.0, 30.0)
@@ -249,18 +250,19 @@ class ControllerThread(threading.Thread):
 
         # PID Controller
         C      = 123585.0
-        Kp_z   = 2 #0.25
-        Kd_z   = 1 #0.01
-        Kp_p   = 2
-        Kd_p   = 1
-        Kp_psi = 2
-        Kd_psi = 1
+        Kp_z   = 0.1#2 #0.25
+        Kd_z   = 0.05#1 #0.01
+        Kp_p   = 0#2
+        Kd_p   = 0#1
+        Kp_psi = 0#2
+        Kd_psi = 0#1
 
         # Version 1: Assuming yaw = 0
         #roll_ref     = -(Kp_p * ey + Kd_p * ey_dot)
         #pitch_ref    = Kp_p * ex + Kd_p * ex_dot
         #yaw_rate_ref = Kp_psi * eyaw + Kd_psi * eyaw_dot
-        #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
+        thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
+        thrust_ref = int(round(thrust_ref))
 
         # Version 2: Handle yaw != 0
         #roll_ref     = sin(yaw) * (Kp_p * ex + Kd_p * ex_dot) - cos(yaw) * (Kp_p * ey + Kd_p * ey_dot)
@@ -272,7 +274,7 @@ class ControllerThread(threading.Thread):
         #self.roll_r    = np.clip(roll_ref, *self.roll_limit)
         #self.pitch_r   = np.clip(pitch_ref, *self.pitch_limit)
         #self.yawrate_r = np.clip(yaw_rate_ref, *self.yaw_limit)
-        #self.thrust_r  = np.clip(thrust_ref, *self.thrust_limit)
+        self.thrust_r  = np.clip(thrust_ref, *self.thrust_limit)
 
         # The code below will simply send the thrust that you can set using
         # the keyboard and put all other control signals to zero. It also
@@ -281,7 +283,7 @@ class ControllerThread(threading.Thread):
         self.roll_r    = np.clip(0.0, *self.roll_limit)
         self.pitch_r   = np.clip(0.0, *self.pitch_limit)
         self.yawrate_r = np.clip(0.0, *self.yaw_limit)
-        self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
+        #self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
 
         if self.panic_thrust_enabled:
             self.thrust_r  = np.clip(self.panic_thrust, *self.thrust_limit)
