@@ -233,9 +233,9 @@ class ControllerThread(threading.Thread):
         # Get euler angles in radians (?) and compute control errors in yaw
         roll, pitch, yaw  = trans.euler_from_quaternion(self.attq)
         eyaw = self.yaw_ref - yaw
-        while (eyaw > np.pi)
+        while (eyaw > np.pi):
             eyaw -= 2 * np.pi;
-        while (eyaw < -np.pi)
+        while (eyaw < -np.pi):
             eyaw += 2 * np.pi;
         eyaw_dot = delta_time_inv * (eyaw - self.yaw_error_last) # Get gyro signal instead?
         #eyaw_dot = -gyro.z
