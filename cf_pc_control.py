@@ -38,7 +38,7 @@ class ControllerThread(threading.Thread):
     thrust_step = 5e3   # Thrust step with W/S. [65535 = 100% PWM duty cycle]
     thrust_initial = 0
     #thrust_limit = (0, 65535)
-    thrust_limit = (0, 35000)
+    thrust_limit = (0, 65535)
     panic_thrust = 30000
     panic_thrust_enabled = False
     roll_limit   = (-30.0, 30.0)
@@ -46,6 +46,8 @@ class ControllerThread(threading.Thread):
     yaw_limit    = (-200.0, 200.0)
     enabled = False
     enable_vicon_pos = False
+    init_samples = 0
+    samples_since_enabled = 0
 
     def __init__(self, cf):
         super(ControllerThread, self).__init__()
@@ -66,6 +68,7 @@ class ControllerThread(threading.Thread):
 
         # Pose estimate from the Kalman filter
         self.pos = np.r_[0.0, 0.0, 0.0]
+        self.pos_error_last = np.r_[0.0, 0.0, 0.0]
         self.vel = np.r_[0.0, 0.0, 0.0]
         self.attq = np.r_[0.0, 0.0, 0.0, 1.0]
         self.yaw_error_last = 0.0
@@ -192,7 +195,7 @@ class ControllerThread(threading.Thread):
 
         # Set the current reference to the current positional estimate, at a
         # slight elevation
-        self.pos_ref = np.r_[self.pos[:2], 1.0]
+        self.pos_ref = np.r_[self.pos[:2], 0.8]
         self.yaw_ref = 0.0
         print('Initial positional reference:', self.pos_ref)
         print('Initial thrust reference:', self.thrust_r)
@@ -228,6 +231,9 @@ class ControllerThread(threading.Thread):
         # ROLL PITCH, YAWRATE AND THRUST
         # WHICH ARE TAKEN CARE OF BY THE ONBOARD CONTROL LOOPS
 
+        # Init time
+        self.samples_since_enabled += 1
+
         # Compute time step
         delta_time_inv = 1 / (1e-3*self.period_in_ms)
 
@@ -238,20 +244,32 @@ class ControllerThread(threading.Thread):
             eyaw -= 2 * np.pi;
         while (eyaw < -np.pi):
             eyaw += 2 * np.pi;
-        eyaw_dot = delta_time_inv * (eyaw - self.yaw_error_last) # Get gyro signal instead?
+        # Use yaw rate estimate for change in error
         #eyaw_dot = -gyro.z
+        # Alternatively differentiate to get change in error
+        eyaw_dot = delta_time_inv * (eyaw - self.yaw_error_last) # Get gyro signal instead?
         self.yaw_error_last = eyaw
 
         # Compute control errors in position (assuming piecewise constant reference)
         ex,  ey,  ez  = self.pos_ref - self.pos
+        # Use velocity estimates for change in error
         ex_dot = -self.vel[0]
         ey_dot = -self.vel[1]
         ez_dot = -self.vel[2]
+        # Alternatively differentiate to get change in error
+        #ex_dot = delta_time_inv * (ex - self.pos_error_last[0])
+        #ey_dot = delta_time_inv * (ey - self.pos_error_last[1])
+        #ez_dot = delta_time_inv * (ez - self.pos_error_last[2])
+        self.pos_error_last = np.r_[ex,ey,ez]
 
         # PID Controller
-        C      = 123585.0
-        Kp_z   = 0.1#2 #0.25
-        Kd_z   = 0.05#1 #0.01
+        #C      = 123585.0 # Gives roughly half available thrust
+        # The values for Z control below were trimmed for
+        # a reference of 0.8 m, giving a steady state error of about 0.15 m
+        # and a sigma of about 0.05 m
+        C      = 148000.0 # Trimmed using cf with flow sensor and string attached
+        Kp_z   = 0.015    # Trimmed using cf with flow sensor and string attached
+        Kd_z   = 0.03     # Trimmed using cf with flow sensor and string attached
         Kp_p   = 0#2
         Kd_p   = 0#1
         Kp_psi = 0#2
@@ -285,7 +303,7 @@ class ControllerThread(threading.Thread):
         self.yawrate_r = np.clip(0.0, *self.yaw_limit)
         #self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
 
-        if self.panic_thrust_enabled:
+        if self.panic_thrust_enabled or (self.samples_since_enabled < self.init_samples):
             self.thrust_r  = np.clip(self.panic_thrust, *self.thrust_limit)
 
         message = ('ref: ({}, {}, {}, {})\n'.format(self.pos_ref[0], self.pos_ref[1], self.pos_ref[2], self.yaw_ref)+
@@ -326,6 +344,7 @@ class ControllerThread(threading.Thread):
         # Need to send a zero setpoint to unlock the controller.
         self.send_setpoint(0.0, 0.0, 0.0, 0)
         self.enabled = True
+        self.samples_since_enabled = 0
 
     def loop_sleep(self, time_start):
         """ Sleeps the control loop to make it run at a specified rate """
