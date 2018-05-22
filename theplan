@@ -5,5 +5,7 @@ Plan of group B
 2. Find parameters for horizontal control xy in view of the simpler pd-controller
 3. Find parameter for altitude control
 4. Add possibility to add a path or rules for flying between points
+	2018-05-22: Added controls for changing the pid parameters of all pids. Also put a waypoint functionality to go between points. When the point is reached within an euclidian distance the reference point is updated to a point within the waypoint list. The idea is that it should stay at the last waypoint at this stage. /Hector and Emil
+
 5. Add possibility to set yaw direction to fly nose-on towards the reference point
 6. Further alternatives: repeated path, more aggressive flying, discrete controller, use vicon positioning system

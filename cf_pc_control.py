@@ -48,6 +48,22 @@ class ControllerThread(threading.Thread):
     enable_vicon_pos = False
     init_samples = 0
     samples_since_enabled = 0
+    waypoint_dist_error = 0.2
+
+    # Initial thrust to compensate for gravity
+    C      = 148000.0 # Trimmed using cf with flow sensor and string attached
+
+    # Thrust PID
+    Kp_z   = 0.015    # Trimmed using cf with flow sensor and string attached
+    Kd_z   = 0.03     # Trimmed using cf with flow sensor and string attached
+
+    # Yaw PID
+    Kp_psi = 0.03
+    Kd_psi = 0.04
+
+    # Pitch and Roll PID
+    Kp_p   = 0.6
+    Kd_p   = 0.2
 
     def __init__(self, cf):
         super(ControllerThread, self).__init__()
@@ -79,6 +95,8 @@ class ControllerThread(threading.Thread):
 
         # This makes Python exit when this is the only thread alive.
         self.daemon = True
+
+
 
         if self.enable_vicon_pos:
             import rospy
@@ -195,6 +213,8 @@ class ControllerThread(threading.Thread):
 
         # Set the current reference to the current positional estimate, at a
         # slight elevation
+        waypoint_idx = 0
+        self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1],[2.0, 0.0, 0.8, 1]])
         self.pos_ref = np.r_[self.pos[:2], 0.8]
         self.yaw_ref = 0.0
         print('Initial positional reference:', self.pos_ref)
@@ -206,10 +226,15 @@ class ControllerThread(threading.Thread):
             while True:
                 time_start = time.time()
                 self.calc_control_signals()
+
+                # Check reached waypoint
+                waypoint_idx = self.check_waypoint(self.waypoints, waypoint_idx)
+                
                 if self.enabled:
                     sp = (self.roll_r, self.pitch_r, self.yawrate_r, int(self.thrust_r))
-                    print(sp)
+                    #print(sp)
                     self.send_setpoint(*sp)
+
                     # Log data to file for analysis
                     ld = np.r_[time.time() - t0]
                     ld = np.append(ld, np.asarray(sp))
@@ -224,6 +249,43 @@ class ControllerThread(threading.Thread):
                     fh.write(','.join(map(str, ld)) + '\n')
                     fh.flush()
                 self.loop_sleep(time_start)
+    
+    def check_waypoint(self, list, idx):
+    	waypoint = list[idx,0:3]
+    	pos = self.pos[0:3]
+    	sqr_dist = np.linalg.norm(waypoint-pos)
+    	if idx + 1 < list.shape[0] and sqr_dist < self.waypoint_dist_error:
+    		self.pos_ref = list[idx+1,0:3]
+    		print("CHAINGING REFERENCE")
+    		return idx + 1
+    	else:
+    		return idx 
+
+    def dynamicPidTweek(self, pid_idx, value):
+    	if pid_idx == 1:
+    		print(self.C, value)
+    		self.C += value
+    		print("C has changed to:", self.C)
+    	elif pid_idx == 2:
+    		self.Kp_z += value
+    		print("Kp_z has changed to: ", self.Kp_z)
+    	elif pid_idx == 3:
+    		self.Kd_z += value
+    		print("Kd_z has changed to: ", self.Kd_z)
+    	elif pid_idx == 4:
+    		self.Kp_psi += value
+    		print("Kd_psi has changed to: ", self.Kp_psi)
+    	elif pid_idx == 5:
+    		self.Kd_psi += value
+    		print("Kd_psi has changed to: ", self.Kd_psi)
+    	elif pid_idx == 6:
+    		self.Kp_p += value
+    		print("Kp_p has changed to: ", self.Kp_p)
+    	elif pid_idx == 7:
+    		self.Kd_p += value
+    		print("Kd_p has changed to: ", self.Kd_p)
+    	else:
+    		None
 
     def calc_control_signals(self):
         # THIS IS WHERE YOU SHOULD PUT YOUR CONTROL CODE
@@ -260,6 +322,7 @@ class ControllerThread(threading.Thread):
         #ex_dot = delta_time_inv * (ex - self.pos_error_last[0])
         #ey_dot = delta_time_inv * (ey - self.pos_error_last[1])
         #ez_dot = delta_time_inv * (ez - self.pos_error_last[2])
+
         self.pos_error_last = np.r_[ex,ey,ez]
 
         # PID Controller
@@ -267,19 +330,19 @@ class ControllerThread(threading.Thread):
         # The values for Z control below were trimmed for
         # a reference of 0.8 m, giving a steady state error of about 0.15 m
         # and a sigma of about 0.05 m
-        C      = 148000.0 # Trimmed using cf with flow sensor and string attached
-        Kp_z   = 0.015    # Trimmed using cf with flow sensor and string attached
-        Kd_z   = 0.03     # Trimmed using cf with flow sensor and string attached
-        Kp_p   = 0#2
-        Kd_p   = 0#1
-        Kp_psi = 0#2
-        Kd_psi = 0#1
+        #self.C      = 148000.0 # Trimmed using cf with flow sensor and string attached
+        #self.Kp_z   = 0.015    # Trimmed using cf with flow sensor and string attached
+        #self.Kd_z   = 0.03     # Trimmed using cf with flow sensor and string attached
+
 
         # Version 1: Assuming yaw = 0
-        #roll_ref     = -(Kp_p * ey + Kd_p * ey_dot)
-        #pitch_ref    = Kp_p * ex + Kd_p * ex_dot
-        #yaw_rate_ref = Kp_psi * eyaw + Kd_psi * eyaw_dot
-        thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81)
+        roll_ref     = -(self.Kp_p * ey + self.Kd_p * ey_dot)
+        roll_ref = int(round(roll_ref))
+        pitch_ref    = self.Kp_p * ex + self.Kd_p * ex_dot
+        pitch_ref = int(round(pitch_ref))
+        yaw_rate_ref = self.Kp_psi * eyaw + self.Kd_psi * eyaw_dot
+        yaw_rate_ref = int(round(yaw_rate_ref))
+        thrust_ref   = self.C * (self.Kp_z * ez + self.Kd_z * ez_dot + 0.027 * 9.81)
         thrust_ref = int(round(thrust_ref))
 
         # Version 2: Handle yaw != 0
@@ -289,18 +352,18 @@ class ControllerThread(threading.Thread):
         #thrust_ref   = C * (Kp_z * ez + Kd_z * ez_dot + 0.027 * 9.81) / (cos(roll) * cos(pitch))
 
         # Limit signals
-        #self.roll_r    = np.clip(roll_ref, *self.roll_limit)
-        #self.pitch_r   = np.clip(pitch_ref, *self.pitch_limit)
-        #self.yawrate_r = np.clip(yaw_rate_ref, *self.yaw_limit)
+        self.roll_r    = np.clip(roll_ref, *self.roll_limit)
+        self.pitch_r   = np.clip(pitch_ref, *self.pitch_limit)
+        self.yawrate_r = np.clip(yaw_rate_ref, *self.yaw_limit)
         self.thrust_r  = np.clip(thrust_ref, *self.thrust_limit)
 
         # The code below will simply send the thrust that you can set using
         # the keyboard and put all other control signals to zero. It also
         # shows how, using numpy, you can threshold the signals to be between
         # the lower and upper limits defined by the arrays *_limit
-        self.roll_r    = np.clip(0.0, *self.roll_limit)
-        self.pitch_r   = np.clip(0.0, *self.pitch_limit)
-        self.yawrate_r = np.clip(0.0, *self.yaw_limit)
+        #self.roll_r    = np.clip(0.0, *self.roll_limit)
+        #self.pitch_r   = np.clip(0.0, *self.pitch_limit)
+        #self.yawrate_r = np.clip(0.0, *self.yaw_limit)
         #self.thrust_r  = np.clip(self.thrust_r, *self.thrust_limit)
 
         if self.panic_thrust_enabled or (self.samples_since_enabled < self.init_samples):
@@ -338,6 +401,8 @@ class ControllerThread(threading.Thread):
         self.yawrate_r = 0.0
         self.thrust_r  = self.thrust_initial
 
+        print(self.C, self.Kp_z, self.Kd_z, self.Kp_psi, self.Kd_psi, self.Kp_p, self.Kd_p)
+
     def enable(self):
         if not self.enabled:
             print('Enabling controller')
@@ -366,6 +431,7 @@ class ControllerThread(threading.Thread):
 def handle_keyboard_input(control):
     pos_step = 0.1 # [m]
     yaw_step = 5   # [deg]
+    pidtweek_rate = 0.01
 
     for ch in read_input():
         if ch == 'h':
@@ -436,6 +502,40 @@ def handle_keyboard_input(control):
         elif ch == 'c':
             panic_thrust_enabled = False
             print('Panic thrust disabled')
+
+        elif ch == '1': # C value
+        	control.dynamicPidTweek(1,100)
+        elif ch == '!':
+        	control.dynamicPidTweek(1,-100)
+
+        elif ch == '2': # Throttle P
+        	control.dynamicPidTweek(2,pidtweek_rate)
+        elif ch == '"':
+        	control.dynamicPidTweek(2,-pidtweek_rate)
+
+        elif ch == '3': #Throttle D
+        	control.dynamicPidTweek(3,pidtweek_rate)
+        elif ch == '#':
+        	control.dynamicPidTweek(3,-pidtweek_rate)
+
+        elif ch == '4': #Yaw P
+        	control.dynamicPidTweek(4,pidtweek_rate)
+        elif ch == '¤':
+        	control.dynamicPidTweek(4,-pidtweek_rate)
+
+        elif ch == '5': #Yaw D
+        	control.dynamicPidTweek(5,pidtweek_rate)
+        elif ch == '%':
+        	control.dynamicPidTweek(5,-pidtweek_rate)
+
+        elif ch == '6': #Pitch Roll P
+        	control.dynamicPidTweek(6,pidtweek_rate)
+        elif ch == '&':
+        	control.dynamicPidTweek(6,-pidtweek_rate)
+        elif ch == '7': #Pitch Roll D
+        	control.dynamicPidTweek(7,pidtweek_rate)
+        elif ch == '/':
+        	control.dynamicPidTweek(7,-pidtweek_rate)
         else:
             print('Unhandled key', ch, 'was pressed')
 
