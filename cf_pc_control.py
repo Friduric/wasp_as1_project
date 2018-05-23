@@ -48,22 +48,22 @@ class ControllerThread(threading.Thread):
     enable_vicon_pos = False
     init_samples = 0
     samples_since_enabled = 0
-    waypoint_dist_error = 0.2
+    waypoint_dist_error = 0.15
 
     # Initial thrust to compensate for gravity
     C      = 148000.0 # Trimmed using cf with flow sensor and string attached
 
     # Thrust PID
-    Kp_z   = 0.015    # Trimmed using cf with flow sensor and string attached
-    Kd_z   = 0.03     # Trimmed using cf with flow sensor and string attached
+    Kp_z   = 0.06    # 0.015 Trimmed using cf with flow sensor and string attached
+    Kd_z   = 0.1     # 0.03 Trimmed using cf with flow sensor and string attached
 
     # Yaw PID
     Kp_psi = 0.03
     Kd_psi = 0.04
 
     # Pitch and Roll PID
-    Kp_p   = 0.6
-    Kd_p   = 0.2
+    Kp_p   = 7.2
+    Kd_p   = 10.8
 
     def __init__(self, cf):
         super(ControllerThread, self).__init__()
@@ -214,7 +214,9 @@ class ControllerThread(threading.Thread):
         # Set the current reference to the current positional estimate, at a
         # slight elevation
         waypoint_idx = 0
-        self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1],[2.0, 0.0, 0.8, 1]])
+        self.waypoint_counter = 0
+        self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1],[2.0, self.pos[1], 0.8, 1], [2.0, self.pos[1], 0.0, 1], [2.0, self.pos[1], 0.0, 0], [2.0, self.pos[1], 0.8, 1], [self.pos[0], self.pos[1], 0.8, 1], [self.pos[0], self.pos[1], 0.0, 1], [self.pos[0], self.pos[1], 0.0, 0]])
+        #self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1]])
         self.pos_ref = np.r_[self.pos[:2], 0.8]
         self.yaw_ref = 0.0
         print('Initial positional reference:', self.pos_ref)
@@ -251,15 +253,27 @@ class ControllerThread(threading.Thread):
                 self.loop_sleep(time_start)
     
     def check_waypoint(self, list, idx):
+    	if list[idx,3] == 0:
+    		if self.enabled:
+    			self.disable()
+    	else:
+    		if not self.enabled:
+    			self.enable()
+
     	waypoint = list[idx,0:3]
     	pos = self.pos[0:3]
     	sqr_dist = np.linalg.norm(waypoint-pos)
-    	if idx + 1 < list.shape[0] and sqr_dist < self.waypoint_dist_error:
-    		self.pos_ref = list[idx+1,0:3]
-    		print("CHAINGING REFERENCE")
-    		return idx + 1
+    	if sqr_dist < self.waypoint_dist_error:
+    		self.waypoint_counter += 1
     	else:
-    		return idx 
+    		self.waypoint_counter = 0
+
+    	if idx + 1 < list.shape[0] and self.waypoint_counter > 100:
+    		self.pos_ref = list[idx+1,0:3]
+    		self.waypoint_counter = 0
+    		return idx + 1
+    		
+    	return idx
 
     def dynamicPidTweek(self, pid_idx, value):
     	if pid_idx == 1:
@@ -337,11 +351,8 @@ class ControllerThread(threading.Thread):
 
         # Version 1: Assuming yaw = 0
         roll_ref     = -(self.Kp_p * ey + self.Kd_p * ey_dot)
-        roll_ref = int(round(roll_ref))
         pitch_ref    = self.Kp_p * ex + self.Kd_p * ex_dot
-        pitch_ref = int(round(pitch_ref))
         yaw_rate_ref = self.Kp_psi * eyaw + self.Kd_psi * eyaw_dot
-        yaw_rate_ref = int(round(yaw_rate_ref))
         thrust_ref   = self.C * (self.Kp_z * ez + self.Kd_z * ez_dot + 0.027 * 9.81)
         thrust_ref = int(round(thrust_ref))
 
