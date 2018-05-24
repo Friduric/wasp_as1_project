@@ -48,10 +48,10 @@ class ControllerThread(threading.Thread):
     enable_vicon_pos = False
     init_samples = 0
     samples_since_enabled = 0
-    waypoint_dist_error = 0.15
+    waypoint_dist_error = 0.25
 
     # Initial thrust to compensate for gravity
-    C      = 148000.0 # Trimmed using cf with flow sensor and string attached
+    C      = 137700 #148000.0 # Trimmed using cf with flow sensor and string attached
 
     # Thrust PID
     Kp_z   = 0.06    # 0.015 Trimmed using cf with flow sensor and string attached
@@ -215,7 +215,18 @@ class ControllerThread(threading.Thread):
         # slight elevation
         waypoint_idx = 0
         self.waypoint_counter = 0
-        self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1],[2.0, self.pos[1], 0.8, 1], [2.0, self.pos[1], 0.0, 1], [2.0, self.pos[1], 0.0, 0], [2.0, self.pos[1], 0.8, 1], [self.pos[0], self.pos[1], 0.8, 1], [self.pos[0], self.pos[1], 0.0, 1], [self.pos[0], self.pos[1], 0.0, 0]])
+        self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1],
+        						   [2.64, self.pos[1], 0.8, 1],
+        						   [2.64, self.pos[1], 0.0, 1],
+        						   [2.64, self.pos[1], 0.0, 0],
+        						   [2.64, self.pos[1], 0.8, 1],
+        						   [2.64, 2.25, 0.8, 1],
+        						   [2.64, 2.25, 0.0, 1],
+        						   [2.64, 2.25, 0.0, 0],
+        						   [2.64, 2.25, 0.8, 1],
+        						   [self.pos[0], self.pos[1], 0.8, 1],
+        						   [self.pos[0], self.pos[1], 0.0, 1],
+        						   [self.pos[0], self.pos[1], 0.0, 0]])
         #self.waypoints = np.array([[self.pos[0], self.pos[1], 0.8, 1]])
         self.pos_ref = np.r_[self.pos[:2], 0.8]
         self.yaw_ref = 0.0
@@ -272,6 +283,11 @@ class ControllerThread(threading.Thread):
     		self.pos_ref = list[idx+1,0:3]
     		self.waypoint_counter = 0
     		return idx + 1
+
+    	if idx + 1 >= list.shape[0] and self.waypoint_counter > 100:
+    		self.pos_ref = list[0,0:3]
+    		self.waypoint_counter = 0
+    		return 0
     		
     	return idx
 
