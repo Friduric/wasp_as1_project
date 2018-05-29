@@ -48,7 +48,7 @@ class ControllerThread(threading.Thread):
     enable_vicon_pos = False
     init_samples = 0
     samples_since_enabled = 0
-    waypoint_dist_error = 0.25
+    waypoint_dist_error = 0.35
 
     # Initial thrust to compensate for gravity
     C      = 137700 #148000.0 # Trimmed using cf with flow sensor and string attached
